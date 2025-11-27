@@ -115,6 +115,19 @@ class ToolAgentLoop(AgentLoopBase):
 
     @rollout_trace_op
     async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentLoopOutput:
+        available_tool_names = list(kwargs.get("available_tools", self.tools))
+        self.available_tools = {
+            tool_name: tool
+            for tool_name, tool in self.tools.items()
+            if tool_name in available_tool_names
+        }
+
+        self.available_tool_schemas = [
+            self.tool_schemas[ii]
+            for ii, tool_name in enumerate(self.tools)
+            if tool_name in available_tool_names
+        ]
+
         messages = list(kwargs["raw_prompt"])
         image_data = copy.deepcopy(kwargs.get("multi_modal_data", {}).get("image", None))
         metrics = {}
@@ -188,7 +201,7 @@ class ToolAgentLoop(AgentLoopBase):
                 None,
                 lambda: self.processor.apply_chat_template(
                     agent_data.messages,
-                    tools=self.tool_schemas,
+                    tools=self.available_tool_schemas,
                     add_generation_prompt=True,
                     tokenize=False,
                     **self.apply_chat_template_kwargs,
@@ -201,7 +214,7 @@ class ToolAgentLoop(AgentLoopBase):
                 None,
                 lambda: self.tokenizer.apply_chat_template(
                     agent_data.messages,
-                    tools=self.tool_schemas,
+                    tools=self.available_tool_schemas,
                     add_generation_prompt=True,
                     tokenize=True,
                     **self.apply_chat_template_kwargs,
@@ -436,7 +449,7 @@ class ToolAgentLoop(AgentLoopBase):
             # TODO: append malformed tool_call to the prompt: invalid function name or arguments
             tool_name = tool_call.name
             tool_args = json.loads(tool_call.arguments)
-            tool = self.tools[tool_name]
+            tool = self.available_tools[tool_name]
             kwargs = tools_kwargs.get(tool_name, {})
             instance_id, _ = await tool.create(create_kwargs=kwargs.get("create_kwargs", {}))
             tool_execution_response, tool_reward, res = await tool.execute(instance_id, tool_args)
